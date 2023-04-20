@@ -1,0 +1,6 @@
+token.env
+users.db
+```
+
+Esto evitará que estos archivos se suban a GitHub cuando hagas push de tu código.
+
