@@ -1,1 +1,203 @@
-html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ASMR Audio Positioner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    .container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 80vh;
+      width: 100%;
+      position: fixed;
+      top: 0;
+      left: 0;
+    }
+    .ear {
+      width: 80px;
+      height: 80px;
+      background-color: #f1f1f1;
+      border-radius: 50%;
+      margin: 0 10px;
+    }
+    .right-ear {
+      order: 1;
+    }
+    .left-ear {
+      order: 2;
+    }
+    .center {
+      width: 40px;
+      height: 40px;
+      background-color: #000;
+      border-radius: 50%;
+      position: absolute;
+      cursor: move;
+    }
+    .button-container {
+      position: fixed;
+      bottom: 20px;
+      left: 0;
+      right: 0;
+      text-align: center;
+    }
+    .record-btn {
+      margin: 0 5px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="ear right-ear"></div>
+    <div class="center" id="audioPosition"></div>
+    <div class="ear left-ear"></div>
+  </div>
+  <div class="button-container">
+    <button class="record-btn" id="recordBtn">Record</button>
+    <button class="record-btn" id="stopBtn" disabled>Stop</button>
+    <button class="record-btn" id="downloadBtn" disabled>Download</button>
+  </div>
+
+  <script>
+    const audioPosition = document.getElementById('audioPosition');
+    const recordBtn = document.getElementById('recordBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    let isDragging = false;
+    let currentX;
+    let currentY;
+    let initialX;
+    let initialY;
+    let xOffset = 0;
+    let yOffset = 0;
+
+    let mediaRecorder;
+    let recordedChunks = [];
+    let audioContext;
+    let sourceNode;
+    let pannerNode;
+    let destinationNode;
+    let positions = [];
+
+    audioPosition.addEventListener('mousedown', dragStart);
+    audioPosition.addEventListener('touchstart', dragStart);
+    document.addEventListener('mouseup', dragEnd);
+    document.addEventListener('touchend', dragEnd);
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('touchmove', drag);
+
+    function dragStart(e) {
+      if (e.type === 'touchstart') {
+        initialX = e.touches[0].clientX - xOffset;
+        initialY = e.touches[0].clientY - yOffset;
+      } else {
+        initialX = e.clientX - xOffset;
+        initialY = e.clientY - yOffset;
+      }
+      isDragging = true;
+    }
+
+    function dragEnd(e) {
+      isDragging = false;
+    }
+
+    function drag(e) {
+      if (isDragging) {
+        e.preventDefault();
+        if (e.type === 'touchmove') {
+          currentX = e.touches[0].clientX - initialX;
+          currentY = e.touches[0].clientY - initialY;
+        } else {
+          currentX = e.clientX - initialX;
+          currentY = e.clientY - initialY;
+        }
+        xOffset = currentX;
+        yOffset = currentY;
+        setTranslate(currentX, currentY, audioPosition);
+        updatePanning();
+      }
+    }
+
+    function setTranslate(xPos, yPos, el) {
+      el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
+    }
+
+    recordBtn.addEventListener('click', startRecording);
+    stopBtn.addEventListener('click', stopRecording);
+    downloadBtn.addEventListener('click', downloadRecording);
+
+    function startRecording() {
+      recordedChunks = [];
+      positions = [];
+      
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+          audioContext = new AudioContext();
+          sourceNode = audioContext.createMediaStreamSource(stream);
+          pannerNode = audioContext.createPanner();
+          destinationNode = audioContext.createMediaStreamDestination();
+          sourceNode.connect(pannerNode);
+          pannerNode.connect(destinationNode);
+          mediaRecorder = new MediaRecorder(destinationNode.stream);
+          mediaRecorder.addEventListener('dataavailable', handleDataAvailable);
+          mediaRecorder.start();
+          recordBtn.disabled = true;
+          stopBtn.disabled = false;
+          updatePanning();
+        })
+        .catch(error => {
+          console.error('Error accessing microphone:', error);
+        });
+    }
+
+    function stopRecording() {
+      mediaRecorder.stop();
+      recordBtn.disabled = false;
+      stopBtn.disabled = true;
+      downloadBtn.disabled = false;
+      sourceNode.disconnect();
+      pannerNode.disconnect();
+      destinationNode.disconnect();
+      audioContext.close();
+    }
+
+    function handleDataAvailable(event) {
+      if (event.data.size > 0) {
+        recordedChunks.push(event.data);
+      }
+    }
+
+    function downloadRecording() {
+      const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'recording.webm';
+      a.click();
+      URL.revokeObjectURL(url);
+      downloadBtn.disabled = true;
+    }
+
+    function updatePanning() {
+      if (pannerNode) {
+        const containerWidth = document.querySelector('.container').offsetWidth;
+        const earWidth = document.querySelector('.ear').offsetWidth;
+        const centerX = currentX + initialX;
+        const normalizedPosition = (centerX - earWidth) / (containerWidth - 2 * earWidth);
+        const panValue = normalizedPosition * 2 - 1;
+        pannerNode.setPosition(panValue, 0, 1 - Math.abs(panValue));
+        positions.push({ time: audioContext.currentTime, position: panValue });
+      }
+    }
+  </script>
+</body>
+</html>
